@@ -1,0 +1,85 @@
+.homePage {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  .header {
+    position: relative;
+    height: 6%;
+    display: flex;
+    flex-direction: row;
+    .connectWalletArea {
+      position: absolute;
+      top: 15%;
+      height: 80%;
+      right: 1%;
+    }
+  }
+  .main {
+    position: relative;
+    top: 15%;
+    left: 25%;
+    width: 50%;
+    height: 53%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background-color: #29344bd7;
+    border-radius: 15px;
+    .header {
+      position: relative;
+      left: 0%;
+      width: 100%;
+      height: 20%;
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      justify-content: center;
+      color: #df5e48;
+      font-size: 42px;
+    }
+    .dataContainer {
+      position: relative;
+      left: 0%;
+      width: 100%;
+      height: 80%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      .auctionProduct {
+        position: relative;
+        width: 100%;
+        height: 72%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+      }
+      .btnArea {
+        position: relative;
+        width: 100%;
+        height: 28%;
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        .btnBid,
+        .btnSell {
+          position: relative;
+          width: 50%;
+          height: 100%;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+        }
+        button {
+          width: 50%;
+          height: 45%;
+          border: none;
+          border-radius: 15px;
+          cursor: pointer;
+        }
+      }
+    }
+  }
+}
