@@ -157,8 +157,68 @@ export const placeBid = async (client: algosdk.Algodv2, account: Account, appId:
 
   const transactionResponse = await client.pendingTransactionInformation(txId).do();
 };
-export const closeAuction = (client: algosdk.Algodv2) => {};
+export const closeAuction = async (client: algosdk.Algodv2, account: Account, appId: number) => {
+  const params = await client.getTransactionParams().do();
 
+  const globalState = await readGlobalState(client, appId);
+
+  console.log(globalState);
+
+  const nftId = globalState.filter((item: any) => {
+    return item.key == btoa(encodeURIComponent('nft_id'));
+  })[0].value.uint;
+
+  const seller = globalState.filter((item: any) => {
+    return item.key == btoa(encodeURIComponent('seller'));
+  })[0]?.value.bytes;
+
+  const prevBidLeader = globalState.filter((item: any) => {
+    return item.key == btoa(encodeURIComponent('bid_account'));
+  })[0]?.value.bytes;
+
+  let accounts: string[] = [algosdk.encodeAddress(Buffer.from(seller, 'base64'))];
+  if (prevBidLeader) {
+    accounts.push(algosdk.encodeAddress(Buffer.from(prevBidLeader, 'base64')));
+  }
+
+  console.log(nftId, accounts);
+
+  const txn = algosdk.makeApplicationDeleteTxn(account.addr, params, appId, undefined, accounts, undefined, [nftId]);
+
+  const txId = txn.txID().toString();
+
+  const signedTxn = txn.signTxn(account.sk);
+  console.log('Signed transaction with txID: %s', txId);
+
+  await client.sendRawTransaction(signedTxn).do();
+
+  const confirmedTxn = await algosdk.waitForConfirmation(client, txId, 4);
+};
+
+export const optInAsset = async (client: algosdk.Algodv2, account: Account, assetId: number) => {
+  let params = await client.getTransactionParams().do();
+  let txn = algosdk.makeAssetTransferTxnWithSuggestedParams(
+    account.addr,
+    account.addr,
+    undefined,
+    undefined,
+    0,
+    new Uint8Array(0),
+    assetId,
+    params,
+  );
+  let txId = txn.txID().toString();
+
+  // Sign the transaction
+  let signedTxn = txn.signTxn(account.sk);
+  console.log('Signed transaction with txID: %s', txId);
+
+  // Submit the transaction
+  await client.sendRawTransaction(signedTxn).do();
+
+  // Wait for transaction to be confirmed
+  let confirmedTxn = await algosdk.waitForConfirmation(client, txId, 4);
+};
 export const readGlobalState = async (client: algosdk.Algodv2, appId: number) => {
   try {
     let applicationInfoResponse = await client.getApplicationByID(appId).do();
