@@ -2,10 +2,11 @@ import { Inter } from '@next/font/google';
 import styles from '../styles/Home.module.scss'; // use to name className by command style.<name>
 import { WalletUI, useWalletUI } from '@algoscan/use-wallet-ui';
 import algosdk, { encodeUnsignedTransaction } from 'algosdk';
-import { Modal, Card } from 'antd';
+import { Modal, Card, InputNumber } from 'antd';
 import { useRef, useState } from 'react';
 import NFTList from '../components/NFTList';
-import { createTransaction, createAuctionApp, setupAuctionApp } from '../api/deployment';
+import { createTransaction, createAuctionApp, setupAuctionApp, placeBid } from '../api/deployment';
+import { initClient, getListNFT } from '../api/walletInteract';
 import { useWallet } from '@txnlab/use-wallet';
 
 const inter = Inter({ subsets: ['latin'] }); // normally font of heading text (h1, h2, ...)
@@ -14,108 +15,32 @@ const { Meta } = Card;
 
 const Home = () => {
   // const { activeAddress, signTransactions } = useWalletUI();
-  const { activeAddress, activeAccount, signTransactions, sendTransactions } = useWallet();
-  const [isOpen, setIsOpen] = useState(false);
+  const { activeAddress, activeAccount, signTransactions, sendTransactions, groupTransactionsBySender } = useWallet();
+  const [isOpenSell, setIsOpenSell] = useState(false);
+  const [isOpenBid, setIsOpenBid] = useState(false);
   const [confirmLoading, setConfirmLoading] = useState(false);
   const [product, setProduct] = useState('');
   const productRef = useRef('');
   const assetsRef = useRef([]);
   const indexProductRef = useRef(-1);
+  const bidAmountRef = useRef(-1);
+  const appIdRef = useRef(0);
 
-  const importAccount = () => {
-    const account = algosdk.mnemonicToSecretKey(
-      'segment enable urban basket problem relief rent flower power shrug differ advice lobster occur lawn exact agree blame worth version admit robust expose able cost',
-    );
-    console.log('private key', account.sk);
-    return account;
-  };
-
-  const initClient = () => {
-    const algodToken = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-    const algodServer = 'http://localhost';
-    const algodPort = 4001;
-    const algodClient = new algosdk.Algodv2(algodToken, algodServer, algodPort);
-
-    return algodClient;
-  };
-
-  const getListNFT = async (user: string) => {
-    let algodClient = initClient();
-
-    let info = await algodClient.accountInformation(user).do();
-    const assets = info['assets'];
-    // console.log(info);
-    return assets;
-  };
-
-  const getBalance = async (user: string) => {
-    let algodClient = await initClient();
-    let info = await algodClient.accountInformation(user).do();
-    const balance = info['amount'];
-    // console.log(info);
-    return balance;
-  };
-
-  const mintNFT = async () => {
-    let myAccount = importAccount();
-    let algodClient = initClient();
-
-    let params = await algodClient.getTransactionParams().do();
-    console.log(params);
-
-    let txn = algosdk.makeAssetCreateTxnWithSuggestedParams(
-      myAccount.addr,
-      new Uint8Array(0),
-      10,
-      0,
-      false,
-      myAccount.addr,
-      myAccount.addr,
-      myAccount.addr,
-      myAccount.addr,
-      'HUY NFT',
-      'HUY NFTS',
-      // 'ipfs://',
-      'https://news.artnet.com/app/news-upload/2022/06/94263c4219a6ae9b68fc8b127db10b8c.png',
-      '',
-      params,
-    );
-
-    let txId = txn.txID().toString();
-
-    let signedTxn = txn.signTxn(myAccount.sk);
-    console.log('Signed transaction with txID: %s', txId);
-
-    // Submit the transaction
-    await algodClient.sendRawTransaction(signedTxn).do();
-    // Wait for transaction to be confirmed
-    let confirmedTxn = await algosdk.waitForConfirmation(algodClient, txId, 4);
-    console.log(confirmedTxn);
-
-    //Get the completed Transaction
-    console.log('Transaction ' + txId + ' confirmed in round ' + confirmedTxn['confirmed-round']);
-    // display results
-    let transactionResponse = await algodClient.pendingTransactionInformation(txId).do();
-    console.log('transactionResponse', transactionResponse);
-    let assetId = transactionResponse['asset-index'];
-    console.log('Created new asset-index: ', assetId);
-    return assetId;
-  };
-
-  const handleConfirmModal = async () => {
+  const handleConfirmModalSell = async () => {
     setConfirmLoading(true);
     let algodClient = initClient();
     if (activeAddress) {
       let txn = await createTransaction(algodClient, activeAddress);
       const encodedTransaction = encodeUnsignedTransaction(txn);
       let appId = await createAuctionApp(txn, algodClient, signTransactions, sendTransactions, encodedTransaction);
-
+      appIdRef.current = appId;
       let nftId = assetsRef.current[indexProductRef.current]['asset-id'];
       await setupAuctionApp(
         algodClient,
         activeAddress,
         signTransactions,
         sendTransactions,
+        groupTransactionsBySender,
         encodeUnsignedTransaction,
         appId,
         nftId,
@@ -123,15 +48,36 @@ const Home = () => {
         10,
       );
 
-      setIsOpen(false);
+      setIsOpenSell(false);
       setConfirmLoading(false);
       setProduct(productRef.current);
     }
   };
+  const handleConfirmModalBid = async () => {
+    console.log('bidRef: ', bidAmountRef.current);
+    setConfirmLoading(true);
+    let algodClient = initClient();
+    if (activeAddress && appIdRef) {
+      await placeBid(
+        algodClient,
+        activeAddress,
+        signTransactions,
+        sendTransactions,
+        encodeUnsignedTransaction,
+        appIdRef.current,
+        bidAmountRef.current * 1000000,
+      );
+    }
+    setConfirmLoading(false);
+    setIsOpenBid(false);
+  };
 
-  const handleCancelModal = () => {
-    setIsOpen(false);
+  const handleCancelModalSell = () => {
+    setIsOpenSell(false);
     setProduct('');
+  };
+  const handleCancelModalBid = () => {
+    setIsOpenBid(false);
   };
 
   const auctionProduct = async () => {
@@ -145,14 +91,23 @@ const Home = () => {
           return item;
         }),
       );
+      assets = assets.filter((item: any) => item.amount !== 0);
+      console.log(assets);
       assetsRef.current = assets;
-      setIsOpen(true);
+      setIsOpenSell(true);
     }
+  };
+  const bidProduct = () => {
+    setIsOpenBid(true);
   };
 
   const choosedProduct = (imageUrl: string, idx: number) => {
     productRef.current = imageUrl;
     indexProductRef.current = idx;
+  };
+
+  const handleChangeBidAmount = (value: number | null) => {
+    if (value) bidAmountRef.current = value;
   };
 
   return (
@@ -182,7 +137,7 @@ const Home = () => {
               </div>
               <div className={styles.btnArea}>
                 <div className={styles.btnBid}>
-                  <button onClick={() => getListNFT(activeAddress)}>Bid</button>
+                  <button onClick={() => bidProduct()}>Bid</button>
                 </div>
                 <div className={styles.btnSell}>
                   <button onClick={() => auctionProduct()}>Sell</button>
@@ -194,13 +149,28 @@ const Home = () => {
       </div>
       <Modal
         title="My NFTs"
-        open={isOpen}
-        onOk={handleConfirmModal}
+        open={isOpenSell}
+        onOk={handleConfirmModalSell}
         confirmLoading={confirmLoading}
-        onCancel={handleCancelModal}
+        onCancel={handleCancelModalSell}
         style={{ top: '20%', zIndex: '9' }}
       >
         <NFTList nft={assetsRef.current} chooseProduct={choosedProduct} />
+      </Modal>
+      <Modal
+        title="Your Bid Amount"
+        open={isOpenBid}
+        onOk={handleConfirmModalBid}
+        confirmLoading={confirmLoading}
+        onCancel={handleCancelModalBid}
+      >
+        <InputNumber
+          min={0.1}
+          max={100}
+          defaultValue={1}
+          step={0.1}
+          onChange={(value) => handleChangeBidAmount(value)}
+        />
       </Modal>
     </div>
   );
