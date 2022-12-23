@@ -1,5 +1,4 @@
-import algosdk from 'algosdk';
-import { Account, Transaction } from 'algosdk';
+import algosdk, { Account, Transaction } from 'algosdk';
 
 export const createTransaction = async (client: algosdk.Algodv2, activeAddress: string): Promise<Transaction> => {
   const contracts = await getContracts(client);
@@ -85,15 +84,16 @@ export const setupAuctionApp = async (
   reserve: number,
   minBidIncrement: number,
 ) => {
-  const onComplete = algosdk.OnApplicationComplete.NoOpOC;
   const params = await client.getTransactionParams().do();
   const fundingAmount = 1000000;
 
   let appArgs = [];
   appArgs.push(
     new Uint8Array(Buffer.from('setup')),
-    new Uint8Array(Buffer.from(intToBytes(reserve))),
-    new Uint8Array(Buffer.from(intToBytes(minBidIncrement))),
+    algosdk.encodeUint64(reserve),
+    algosdk.encodeUint64(minBidIncrement),
+    // new Uint8Array(Buffer.from([reserve])),
+    // new Uint8Array(Buffer.from([minBidIncrement])),
   );
 
   const appAddr = algosdk.getApplicationAddress(appId);
@@ -169,12 +169,64 @@ export const setupAuctionApp = async (
   // const transFundNftTxn = await sendTransactions(signedFundNftTxn, 4);
   // console.log('fundNft: ', transFundNftTxn);
 };
-export const placeBid = (client: algosdk.Algodv2) => {};
+export const placeBid = async (client: algosdk.Algodv2, account: Account, appId: number, bidAmount: number) => {
+  const params = await client.getTransactionParams().do();
+
+  let appArgs = [new Uint8Array(Buffer.from('bid'))];
+  // appArgs.push(new Uint8Array(Buffer.from('bid')));
+  const appAddr = algosdk.getApplicationAddress(appId);
+
+  const globalState = await readGlobalState(client, appId);
+
+  const nftId = globalState.filter((item: any) => {
+    return item.key == btoa(encodeURIComponent('nft_id'));
+  })[0].value.uint;
+
+  const prevBidLeader = globalState.filter((item: any) => {
+    return item.key == btoa(encodeURIComponent('bid_account'));
+  })[0]?.value.bytes;
+
+  let accounts: string[] = [];
+  if (prevBidLeader) {
+    accounts = [algosdk.encodeAddress(Buffer.from(prevBidLeader, 'base64'))];
+  }
+
+  const fundAppTxn = algosdk.makePaymentTxnWithSuggestedParams(
+    account.addr,
+    appAddr,
+    bidAmount,
+    undefined,
+    undefined,
+    params,
+  );
+
+  const setupTxn = algosdk.makeApplicationNoOpTxn(account.addr, params, appId, appArgs, accounts, undefined, [nftId]);
+
+  //Assign
+  algosdk.assignGroupID([fundAppTxn, setupTxn]);
+
+  //Sign
+  const signedFundAppTxn = fundAppTxn.signTxn(account.sk);
+  const signedSetupTxn = setupTxn.signTxn(account.sk);
+
+  //Send
+  await client.sendRawTransaction([signedFundAppTxn, signedSetupTxn]).do();
+
+  const txId = fundAppTxn.txID().toString();
+
+  const confirmedTxn = await algosdk.waitForConfirmation(client, txId, 4);
+  console.log('confirmed' + confirmedTxn);
+
+  console.log('Transaction ' + txId + ' confirmed in round ' + confirmedTxn['confirmed-round']);
+
+  const transactionResponse = await client.pendingTransactionInformation(txId).do();
+};
 export const closeAuction = (client: algosdk.Algodv2) => {};
 
 export const readGlobalState = async (client: algosdk.Algodv2, appId: number) => {
   try {
     let applicationInfoResponse = await client.getApplicationByID(appId).do();
+    console.log(applicationInfoResponse);
     let globalState = applicationInfoResponse['params']['global-state'];
     return globalState.map((state: any) => {
       return state;
