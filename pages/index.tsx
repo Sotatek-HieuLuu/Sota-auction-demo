@@ -5,18 +5,22 @@ import algosdk, { encodeUnsignedTransaction } from 'algosdk';
 import { Modal, Card } from 'antd';
 import { useRef, useState } from 'react';
 import NFTList from '../components/NFTList';
+import { createTransaction, createAuctionApp, setupAuctionApp } from '../api/deployment';
+import { useWallet } from '@txnlab/use-wallet';
 
 const inter = Inter({ subsets: ['latin'] }); // normally font of heading text (h1, h2, ...)
 
 const { Meta } = Card;
 
 const Home = () => {
-  const { activeAddress, signTransactions } = useWalletUI();
+  // const { activeAddress, signTransactions } = useWalletUI();
+  const { activeAddress, activeAccount, signTransactions, sendTransactions } = useWallet();
   const [isOpen, setIsOpen] = useState(false);
   const [confirmLoading, setConfirmLoading] = useState(false);
   const [product, setProduct] = useState('');
   const productRef = useRef('');
   const assetsRef = useRef([]);
+  const indexProductRef = useRef(-1);
 
   const importAccount = () => {
     const account = algosdk.mnemonicToSecretKey(
@@ -98,13 +102,31 @@ const Home = () => {
     return assetId;
   };
 
-  const handleConfirmModal = () => {
+  const handleConfirmModal = async () => {
     setConfirmLoading(true);
-    setTimeout(() => {
+    let algodClient = initClient();
+    if (activeAddress) {
+      let txn = await createTransaction(algodClient, activeAddress);
+      const encodedTransaction = encodeUnsignedTransaction(txn);
+      let appId = await createAuctionApp(txn, algodClient, signTransactions, sendTransactions, encodedTransaction);
+
+      let nftId = assetsRef.current[indexProductRef.current]['asset-id'];
+      await setupAuctionApp(
+        algodClient,
+        activeAddress,
+        signTransactions,
+        sendTransactions,
+        encodeUnsignedTransaction,
+        appId,
+        nftId,
+        1000,
+        10,
+      );
+
       setIsOpen(false);
       setConfirmLoading(false);
       setProduct(productRef.current);
-    }, 2000);
+    }
   };
 
   const handleCancelModal = () => {
@@ -128,8 +150,9 @@ const Home = () => {
     }
   };
 
-  const choosedProduct = (imageUrl: string) => {
+  const choosedProduct = (imageUrl: string, idx: number) => {
     productRef.current = imageUrl;
+    indexProductRef.current = idx;
   };
 
   return (

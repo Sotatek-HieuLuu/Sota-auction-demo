@@ -1,14 +1,14 @@
 import algosdk from 'algosdk';
-import { Account } from 'algosdk';
+import { Account, Transaction } from 'algosdk';
 
-export const createAuctionApp = async (client: algosdk.Algodv2, account: Account) => {
+export const createTransaction = async (client: algosdk.Algodv2, activeAddress: string): Promise<Transaction> => {
   const contracts = await getContracts(client);
 
   const onComplete = algosdk.OnApplicationComplete.NoOpOC;
   const params = await client.getTransactionParams().do();
 
   const txn = algosdk.makeApplicationCreateTxn(
-    account.addr,
+    activeAddress,
     params,
     onComplete,
     contracts.approvalCompile,
@@ -19,19 +19,54 @@ export const createAuctionApp = async (client: algosdk.Algodv2, account: Account
     2,
   );
 
+  return txn;
+};
+
+export const createAuctionApp = async (
+  txn: Transaction,
+  client: algosdk.Algodv2,
+  signTransactions: (encodedTransaction: Uint8Array[]) => Promise<Uint8Array[]>,
+  sendTransactions: (transactions: Uint8Array[], waitRoundsToConfirm?: number | undefined) => Promise<any>,
+  encodedTransaction: Uint8Array,
+) => {
+  // const contracts = await getContracts(client);
+
+  // const onComplete = algosdk.OnApplicationComplete.NoOpOC;
+  // const params = await client.getTransactionParams().do();
+
+  // const txn = algosdk.makeApplicationCreateTxn(
+  //   account.addr,
+  //   params,
+  //   onComplete,
+  //   contracts.approvalCompile,
+  //   contracts.clearStateCompile,
+  //   0,
+  //   0,
+  //   7,
+  //   2,
+  // );
+
+  // const txn = await createTransaction(client, account.addr);
+
   const txId = txn.txID().toString();
 
-  const signedTxn = txn.signTxn(account.sk);
+  // const signedTxn = txn.signTxn(account.sk);
+  const signedTxn = await signTransactions([encodedTransaction]);
+
   console.log('Signed transaction with txID: %s', txId);
+  console.log('Signed transaction with signedTxn: %s', typeof signedTxn, signedTxn);
 
-  await client.sendRawTransaction(signedTxn).do();
+  // await client.sendRawTransaction(signedTxn).do();
 
-  const confirmedTxn = await algosdk.waitForConfirmation(client, txId, 4);
-  console.log('confirmed' + confirmedTxn);
+  // const confirmedTxn = await algosdk.waitForConfirmation(client, txId, 4);
+  // console.log('confirmed' + confirmedTxn);
 
-  console.log('Transaction ' + txId + ' confirmed in round ' + confirmedTxn['confirmed-round']);
+  // console.log('Transaction ' + txId + ' confirmed in round ' + confirmedTxn['confirmed-round']);
 
-  const transactionResponse = await client.pendingTransactionInformation(txId).do();
+  // const transactionResponse = await client.pendingTransactionInformation(txId).do();
+
+  const transactionResponse = await sendTransactions(signedTxn, 4);
+  console.log('trans; ', transactionResponse);
 
   const appId = transactionResponse['application-index'];
   console.log('Created new app-id: ', appId);
@@ -40,7 +75,11 @@ export const createAuctionApp = async (client: algosdk.Algodv2, account: Account
 
 export const setupAuctionApp = async (
   client: algosdk.Algodv2,
-  account: Account,
+  // account: Account,
+  activeAddress: string,
+  signTransactions: (encodedTransaction: Uint8Array[]) => Promise<Uint8Array[]>,
+  sendTransactions: (transactions: Uint8Array[], waitRoundsToConfirm?: number | undefined) => Promise<any>,
+  encodeUnsignedTransaction: (transactionObject: algosdk.Transaction) => Uint8Array,
   appId: number,
   nftId: number,
   reserve: number,
@@ -58,23 +97,25 @@ export const setupAuctionApp = async (
   );
 
   const appAddr = algosdk.getApplicationAddress(appId);
-  console.log(appAddr);
+  console.log('appAddress: ', appAddr);
 
   const fundAppTxn = algosdk.makePaymentTxnWithSuggestedParams(
-    account.addr,
+    activeAddress,
     appAddr,
     fundingAmount,
     undefined,
     undefined,
     params,
   );
+  const encodedFundAppTxn = encodeUnsignedTransaction(fundAppTxn);
 
-  const setupTxn = algosdk.makeApplicationNoOpTxn(account.addr, params, appId, appArgs, [account.addr], undefined, [
+  const setupTxn = algosdk.makeApplicationNoOpTxn(activeAddress, params, appId, appArgs, [activeAddress], undefined, [
     nftId,
   ]);
+  const encodedSetupTxn = encodeUnsignedTransaction(setupTxn);
 
   const fundNftTxn = algosdk.makeAssetTransferTxnWithSuggestedParams(
-    account.addr,
+    activeAddress,
     appAddr,
     undefined,
     undefined,
@@ -83,26 +124,50 @@ export const setupAuctionApp = async (
     nftId,
     params,
   );
+  const encodedFundNftTxn = encodeUnsignedTransaction(fundNftTxn);
 
   //Assign
-  algosdk.assignGroupID([fundAppTxn, setupTxn, fundNftTxn]);
+  // algosdk.assignGroupID([fundAppTxn, setupTxn, fundNftTxn]);
 
   //Sign
-  const signedFundAppTxn = fundAppTxn.signTxn(account.sk);
-  const signedSetupTxn = setupTxn.signTxn(account.sk);
-  const signedFundNftTxn = fundNftTxn.signTxn(account.sk);
+  // const signedFundAppTxn = fundAppTxn.signTxn(account.sk);
+  const signedTxn = await signTransactions([encodedFundAppTxn, encodedSetupTxn, encodedFundNftTxn]);
+  console.log('signed: ', signedTxn);
+  // const signedSetupTxn = setupTxn.signTxn(account.sk);
+  // const signedSetupTxn = await signTransactions([encodedSetupTxn]);
+  // const signedFundNftTxn = fundNftTxn.signTxn(account.sk);
+  // const signedFundNftTxn = await signTransactions([encodedFundNftTxn]);
 
   //Send
-  await client.sendRawTransaction([signedFundAppTxn, signedSetupTxn, signedFundNftTxn]).do();
+  for (let i = 0; i < signedTxn.length; i++) {
+    const trans = await sendTransactions([signedTxn[i]], 4);
+    console.log('trans; ', trans);
+  }
+  // await client.sendRawTransaction(signedTxn).do();
+  // await client.sendRawTransaction(signedFundAppTxn).do();
+  // await client.sendRawTransaction(signedSetupTxn).do();
+  // await client.sendRawTransaction(signedFundNftTxn).do();
 
-  const txId = fundAppTxn.txID().toString();
+  // const txId = fundAppTxn.txID().toString();
 
-  const confirmedTxn = await algosdk.waitForConfirmation(client, txId, 4);
-  console.log('confirmed' + confirmedTxn);
+  // const confirmedTxn = await algosdk.waitForConfirmation(client, txId, 4);
+  // console.log('confirmed' + confirmedTxn);
 
-  console.log('Transaction ' + txId + ' confirmed in round ' + confirmedTxn['confirmed-round']);
+  // console.log('Transaction ' + txId + ' confirmed in round ' + confirmedTxn['confirmed-round']);
 
-  const transactionResponse = await client.pendingTransactionInformation(txId).do();
+  // const transactionResponse = await client.pendingTransactionInformation(txId).do();
+
+  // const signedFundAppTxn = await signTransactions([encodedFundAppTxn]);
+  // const transFundAppTxn = await sendTransactions(signedFundAppTxn, 4);
+  // console.log('fundApp: ', transFundAppTxn);
+
+  // const signedSetupTxn = await signTransactions([encodedSetupTxn]);
+  // const transSetupTxn = await sendTransactions(signedSetupTxn, 4);
+  // console.log('setup: ', transSetupTxn);
+
+  // const signedFundNftTxn = await signTransactions([encodedFundNftTxn]);
+  // const transFundNftTxn = await sendTransactions(signedFundNftTxn, 4);
+  // console.log('fundNft: ', transFundNftTxn);
 };
 export const placeBid = (client: algosdk.Algodv2) => {};
 export const closeAuction = (client: algosdk.Algodv2) => {};

@@ -4,7 +4,7 @@ import styles from '../styles/NFTList.module.scss';
 
 interface Props {
   nft: Array<any>;
-  chooseProduct?: (imageUrl: string) => void;
+  chooseProduct?: (imageUrl: string, idx: number) => void;
 }
 
 const NFTList: React.FC<Props> = ({ nft, chooseProduct }) => {
@@ -12,7 +12,7 @@ const NFTList: React.FC<Props> = ({ nft, chooseProduct }) => {
 
   const handleClicked = (idx: number) => {
     setChoosen(idx);
-    chooseProduct && chooseProduct(nft[idx].image);
+    chooseProduct && chooseProduct(nft[idx].image, idx);
   };
 
   return (
