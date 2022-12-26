@@ -49,8 +49,6 @@ export const setupAuctionApp = async (
   activeAddress: string,
   signTransactions: (encodedTransaction: Uint8Array[]) => Promise<Uint8Array[]>,
   sendTransactions: (transactions: Uint8Array[], waitRoundsToConfirm?: number | undefined) => Promise<any>,
-  groupTransactionsBySender: (transactions: TransactionsArray) => Promise<Record<string, any>>,
-  encodeUnsignedTransaction: (transactionObject: algosdk.Transaction) => Uint8Array,
   appId: number,
   nftId: number,
   reserve: number,
@@ -64,13 +62,12 @@ export const setupAuctionApp = async (
     new Uint8Array(Buffer.from('setup')),
     algosdk.encodeUint64(reserve),
     algosdk.encodeUint64(minBidIncrement),
-    // new Uint8Array(Buffer.from([reserve])),
-    // new Uint8Array(Buffer.from([minBidIncrement])),
   );
 
   const appAddr = algosdk.getApplicationAddress(appId);
   console.log('appAddress: ', appAddr);
 
+  //Txn
   const fundAppTxn = algosdk.makePaymentTxnWithSuggestedParams(
     activeAddress,
     appAddr,
@@ -79,13 +76,9 @@ export const setupAuctionApp = async (
     undefined,
     params,
   );
-  const encodedFundAppTxn = encodeUnsignedTransaction(fundAppTxn);
-
   const setupTxn = algosdk.makeApplicationNoOpTxn(activeAddress, params, appId, appArgs, [activeAddress], undefined, [
     nftId,
   ]);
-  const encodedSetupTxn = encodeUnsignedTransaction(setupTxn);
-
   const fundNftTxn = algosdk.makeAssetTransferTxnWithSuggestedParams(
     activeAddress,
     appAddr,
@@ -96,30 +89,25 @@ export const setupAuctionApp = async (
     nftId,
     params,
   );
-  const encodedFundNftTxn = encodeUnsignedTransaction(fundNftTxn);
 
   //Assign
-  // algosdk.assignGroupID([fundAppTxn, setupTxn, fundNftTxn]);
+  const assign = algosdk.assignGroupID([fundAppTxn, setupTxn, fundNftTxn]);
+
+  //Encode
+  const encodeTxn = encodeUnsignedTransactions(assign);
+
   //Sign
-  const signedTxn = await signTransactions([encodedFundAppTxn, encodedSetupTxn, encodedFundNftTxn]);
-  console.log('signed: ', signedTxn);
+  const signedTxn = await signTransactions(encodeTxn);
 
   //Send
-  // for (let i = 0; i < signedTxn.length; i++) {
-  //   const trans = await sendTransactions([signedTxn[i]], 4);
-  //   console.log('trans; ', trans);
-  // }
   const trans = await sendTransactions(signedTxn, 4);
-  console.log('trans; ', trans);
 };
 
 export const placeBid = async (
   client: algosdk.Algodv2,
-  // account: Account,
   activeAddress: string,
   signTransactions: (encodedTransaction: Uint8Array[]) => Promise<Uint8Array[]>,
   sendTransactions: (transactions: Uint8Array[], waitRoundsToConfirm?: number | undefined) => Promise<any>,
-  encodeUnsignedTransaction: (transactionObject: algosdk.Transaction) => Uint8Array,
   appId: number,
   bidAmount: number,
 ) => {
@@ -127,7 +115,6 @@ export const placeBid = async (
   const params = await client.getTransactionParams().do();
 
   let appArgs = [new Uint8Array(Buffer.from('bid'))];
-  // appArgs.push(new Uint8Array(Buffer.from('bid')));
   const appAddr = algosdk.getApplicationAddress(appId);
 
   const globalState = await readGlobalState(client, appId);
@@ -145,6 +132,7 @@ export const placeBid = async (
     accounts = [algosdk.encodeAddress(Buffer.from(prevBidLeader, 'base64'))];
   }
 
+  //Txn
   const fundAppTxn = algosdk.makePaymentTxnWithSuggestedParams(
     activeAddress,
     appAddr,
@@ -153,35 +141,18 @@ export const placeBid = async (
     undefined,
     params,
   );
-  const encodedFundAppTxn = encodeUnsignedTransaction(fundAppTxn);
-
   const setupTxn = algosdk.makeApplicationNoOpTxn(activeAddress, params, appId, appArgs, accounts, undefined, [nftId]);
-  const encodedSetupTxn = encodeUnsignedTransaction(setupTxn);
 
   //Assign
-  algosdk.assignGroupID([fundAppTxn, setupTxn]);
+  const assign = algosdk.assignGroupID([fundAppTxn, setupTxn]);
+
+  //Encode
+  const encodeTxn = encodeUnsignedTransactions(assign);
 
   //Sign
-  // const signedFundAppTxn = fundAppTxn.signTxn(account.sk);
-  // const signedSetupTxn = setupTxn.signTxn(account.sk);
-  const signedTxn = await signTransactions([encodedFundAppTxn, encodedSetupTxn]);
-  console.log('signed: ', signedTxn);
+  const signedTxn = await signTransactions(encodeTxn);
 
   //Send
-  // await client.sendRawTransaction([signedFundAppTxn, signedSetupTxn]).do();
-
-  // const txId = fundAppTxn.txID().toString();
-
-  // const confirmedTxn = await algosdk.waitForConfirmation(client, txId, 4);
-  // console.log('confirmed' + confirmedTxn);
-
-  // console.log('Transaction ' + txId + ' confirmed in round ' + confirmedTxn['confirmed-round']);
-
-  // const transactionResponse = await client.pendingTransactionInformation(txId).do();
-  // for (let i = 0; i < signedTxn.length; i++) {
-  //   const trans = await sendTransactions([signedTxn[i]], 4);
-  //   console.log('trans; ', trans);
-  // }
   const trans = await sendTransactions(signedTxn, 4);
 };
 export const closeAuction = (client: algosdk.Algodv2) => {};
@@ -203,6 +174,14 @@ export const readGlobalState = async (client: algosdk.Algodv2, appId: number) =>
 
 const intToBytes = (integer: number) => {
   return integer.toString();
+};
+
+const encodeUnsignedTransactions = (txns: algosdk.Transaction[]) => {
+  let res = [];
+  for (let txn of txns) {
+    res.push(algosdk.encodeUnsignedTransaction(txn));
+  }
+  return res;
 };
 
 const compileProgram = async (client: algosdk.Algodv2, program: any) => {

@@ -14,8 +14,7 @@ const inter = Inter({ subsets: ['latin'] }); // normally font of heading text (h
 const { Meta } = Card;
 
 const Home = () => {
-  // const { activeAddress, signTransactions } = useWalletUI();
-  const { activeAddress, activeAccount, signTransactions, sendTransactions, groupTransactionsBySender } = useWallet();
+  const { activeAddress, signTransactions, sendTransactions } = useWallet();
   const [isOpenSell, setIsOpenSell] = useState(false);
   const [isOpenBid, setIsOpenBid] = useState(false);
   const [confirmLoading, setConfirmLoading] = useState(false);
@@ -40,8 +39,6 @@ const Home = () => {
         activeAddress,
         signTransactions,
         sendTransactions,
-        groupTransactionsBySender,
-        encodeUnsignedTransaction,
         appId,
         nftId,
         1000,
@@ -63,7 +60,6 @@ const Home = () => {
         activeAddress,
         signTransactions,
         sendTransactions,
-        encodeUnsignedTransaction,
         appIdRef.current,
         bidAmountRef.current * 1000000,
       );
