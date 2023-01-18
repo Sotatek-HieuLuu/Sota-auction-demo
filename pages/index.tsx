@@ -1,13 +1,13 @@
+import { WalletUI } from '@algoscan/use-wallet-ui';
 import { Inter } from '@next/font/google';
-import styles from '../styles/Home.module.scss'; // use to name className by command style.<name>
-import { WalletUI, useWalletUI } from '@algoscan/use-wallet-ui';
-import algosdk, { encodeUnsignedTransaction } from 'algosdk';
-import { Modal, Card, InputNumber } from 'antd';
-import { useRef, useState } from 'react';
-import NFTList from '../components/NFTList';
-import { createTransaction, createAuctionApp, setupAuctionApp, placeBid } from '../api/deployment';
-import { initClient, getListNFT } from '../api/walletInteract';
 import { useWallet } from '@txnlab/use-wallet';
+import algosdk, { encodeUnsignedTransaction } from 'algosdk';
+import { Card, InputNumber, Modal } from 'antd';
+import { useRef, useState } from 'react';
+import { createMainContractAndFullTest, createTokenGenerator, verify } from '../api/deployment';
+import { getListNFT, initClient } from '../api/walletInteract';
+import NFTList from '../components/NFTList';
+import styles from '../styles/Home.module.scss'; // use to name className by command style.<name>
 
 const inter = Inter({ subsets: ['latin'] }); // normally font of heading text (h1, h2, ...)
 
@@ -25,25 +25,60 @@ const Home = () => {
   const bidAmountRef = useRef(-1);
   const appIdRef = useRef(0);
 
+  const testVerify = async () => {
+    let algodClient = initClient();
+    if (activeAddress) {
+      await verify(algodClient, activeAddress, signTransactions, sendTransactions);
+    }
+    console.log('end');
+  };
+
   const handleConfirmModalSell = async () => {
     setConfirmLoading(true);
     let algodClient = initClient();
     if (activeAddress) {
-      let txn = await createTransaction(algodClient, activeAddress);
-      const encodedTransaction = encodeUnsignedTransaction(txn);
-      let appId = await createAuctionApp(txn, algodClient, signTransactions, sendTransactions, encodedTransaction);
-      appIdRef.current = appId;
-      let nftId = assetsRef.current[indexProductRef.current]['asset-id'];
-      await setupAuctionApp(
-        algodClient,
-        activeAddress,
-        signTransactions,
-        sendTransactions,
-        appId,
-        nftId,
-        1000,
-        10,
-      );
+      // await atomicMultiUser(algodClient, activeAddress, signTransactions, sendTransactions);
+      createMainContractAndFullTest(algodClient, activeAddress, signTransactions, sendTransactions);
+      //
+      //
+      //
+      //
+      // // //siu
+      // // const appId = 152094636;
+
+      // let assetUintName = 'Siuuu';
+      // let assetUrl = 'https://i.kym-cdn.com/entries/icons/original/000/039/420/CR7_siiii.jpg';
+      // let assetId1 = await mintAsset(
+      //   algodClient,
+      //   activeAddress,
+      //   signTransactions,
+      //   sendTransactions,
+      //   appId,
+      //   assetUintName,
+      //   assetUrl,
+      // );
+
+      // await withdrawAsset(algodClient, activeAddress, signTransactions, sendTransactions, appId, assetId1);
+
+      // //pessi
+
+      // assetUintName = 'pessi';
+      // assetUrl = 'https://pbs.twimg.com/profile_images/1406625739328339969/hA7N3ZXJ_400x400.jpg';
+      // let assetId2 = await mintAsset(
+      //   algodClient,
+      //   activeAddress,
+      //   signTransactions,
+      //   sendTransactions,
+      //   appId,
+      //   assetUintName,
+      //   assetUrl,
+      // );
+      // await withdrawAsset(algodClient, activeAddress, signTransactions, sendTransactions, appId, assetId2);
+
+      //deposit
+
+      // await depositAsset(algodClient, activeAddress, signTransactions, sendTransactions, appId, assetId2);
+      // await depositAsset(algodClient, activeAddress, signTransactions, sendTransactions, appId, assetId1);
 
       setIsOpenSell(false);
       setConfirmLoading(false);
@@ -54,15 +89,22 @@ const Home = () => {
     console.log('bidRef: ', bidAmountRef.current);
     setConfirmLoading(true);
     let algodClient = initClient();
+    // testVerify();
+
     if (activeAddress && appIdRef) {
-      await placeBid(
-        algodClient,
-        activeAddress,
-        signTransactions,
-        sendTransactions,
-        appIdRef.current,
-        bidAmountRef.current * 1000000,
-      );
+      // let txn = await createTransaction(algodClient, activeAddress);
+      // const encodedTransaction = encodeUnsignedTransaction(txn);
+      // let appId = await createAuctionApp(txn, algodClient, signTransactions, sendTransactions, encodedTransaction);
+      // appIdRef.current = appId;
+      // console.log(appId);
+      // await placeBid(
+      //   algodClient,
+      //   activeAddress,
+      //   signTransactions,
+      //   sendTransactions,
+      //   appIdRef.current,
+      //   bidAmountRef.current * 1000000,
+      // );
     }
     setConfirmLoading(false);
     setIsOpenBid(false);
