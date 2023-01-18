@@ -646,13 +646,13 @@ export const sellNFT = async (
     const on_buy_asset = async (buyer: Account) => {
       const appArgs = [new Uint8Array(Buffer.from('buy')), encodeUint64(nftPrice)];
       
-      let makePaymentParams = await client.getTransactionParams().do();
-      makePaymentParams.fee = 4 * algosdk.ALGORAND_MIN_TX_FEE;
-      makePaymentParams.flatFee = true;
+      let makeApplicationParams = await client.getTransactionParams().do();
+      makeApplicationParams.fee = 0;
+      makeApplicationParams.flatFee = true;
 
-      let makeAssetTransferParams = await client.getTransactionParams().do();
-      makeAssetTransferParams.fee = 1500; //3000
-      makeAssetTransferParams.flatFee = true;
+      let makePaymentParams = await client.getTransactionParams().do();
+      makePaymentParams.fee = 3 * algosdk.ALGORAND_MIN_TX_FEE;
+      makePaymentParams.flatFee = true;
 
       // Txn sender is buyer
       const paymentTxn = algosdk.makePaymentTxnWithSuggestedParams(
@@ -666,7 +666,7 @@ export const sellNFT = async (
 
       const transferAssetTxn = algosdk.makeApplicationDeleteTxn(
         buyer.addr,
-        makePaymentParams,
+        makeApplicationParams,
         appId,
         appArgs,
         [buyer.addr],
@@ -699,12 +699,54 @@ export const sellNFT = async (
         + Smart Contract send remainder Algo and asset to seller
         + Delete app
       */
+    console.log("Cancel sell asset");
     {
       const on_cancel_sell = async () => {
+        const admin = importAccount2();
+
+        let makeApplicationParams = await client.getTransactionParams().do();
+        makeApplicationParams.fee = 0;
+        makeApplicationParams.flatFee = true;
+
+        let makePaymentParams = await client.getTransactionParams().do();
+        makePaymentParams.fee = 2 * algosdk.ALGORAND_MIN_TX_FEE;
+        makePaymentParams.flatFee = true;
+        const appArgs = [new Uint8Array(Buffer.from('cancel')), encodeUint64(nftPrice)];
         
+        const paymentTxn = algosdk.makePaymentTxnWithSuggestedParams(
+          seller.addr,
+          admin.addr,
+          nftPrice,
+          seller.addr,
+          undefined,
+          makePaymentParams,
+        )
+        
+        const cancelSellTxn = algosdk.makeApplicationDeleteTxn(
+          seller.addr,
+          makeApplicationParams,
+          appId,
+          appArgs,
+          [seller.addr],
+          undefined,
+          [nftID],
+        )
+
+        let txgroup = algosdk.assignGroupID([paymentTxn, cancelSellTxn]);
+
+        const cancelSellTxnAtomic = txgroup[1];
+
+        const signedCancelSellAssetTxnAtomic = cancelSellTxnAtomic.signTxn(buyer.sk);
+
+        const encodeTxn = encodeUnsignedTransactions(txgroup);
+        const transactions = [encodeTxn[0], signedCancelSellAssetTxnAtomic];
+
+        const signedTxn = await signTransactions(transactions);
+        const trans = await sendTransactions(signedTxn, 4);
       };
       await on_cancel_sell();
     }
+    console.log("Cancel sell asset successful");
 }
 
 
