@@ -3,7 +3,8 @@ import algosdk from 'algosdk';
 export const importAccount = () => {
   const account = algosdk.mnemonicToSecretKey(
     // 'bonus fabric wise whale possible bunker ritual rhythm element stable sad deposit doll promote museum fun giggle peasant crash retreat beauty rigid gadget absorb rib',
-    'segment enable urban basket problem relief rent flower power shrug differ advice lobster occur lawn exact agree blame worth version admit robust expose able cost',
+    // 'segment enable urban basket problem relief rent flower power shrug differ advice lobster occur lawn exact agree blame worth version admit robust expose able cost',
+    'warrior raven future donkey foster beyond short wealth city gentle rebuild gauge poem impose muscle anxiety cake supreme emotion release weasel basic empower absent dismiss'
   );
   console.log('private key', account.sk);
   return account;
