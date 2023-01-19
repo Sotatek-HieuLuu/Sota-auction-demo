@@ -2,44 +2,6 @@ import algosdk, {
   encodeUint64
 } from 'algosdk';
 
-// export const verify = async (
-//   client: algosdk.Algodv2,
-//   activeAddress: string,
-//   signTransactions: (encodedTransaction: Uint8Array[]) => Promise<Uint8Array[]>,
-//   sendTransactions: (transactions: Uint8Array[], waitRoundsToConfirm?: number | undefined) => Promise<any>,
-// ) => {
-//   const params = await client.getTransactionParams().do();
-//   params.flatFee = true;
-//   console.log(params);
-//   const note = new TextEncoder().encode('Please confirm to login: #3755'); //<-- key from BE
-//   const trans = algosdk.makePaymentTxnWithSuggestedParams(activeAddress, activeAddress, 0, undefined, note, params);
-//   const encode = algosdk.encodeUnsignedTransaction(trans);
-//   const sign = await signTransactions([encode]);
-
-//   console.log(sign[0].toString());
-//   console.log(sign[0]);
-//   //BE side
-//   const stxn = algosdk.decodeSignedTransaction(sign[0]);
-//   console.log('stxn', stxn);
-//   console.log('note', new TextDecoder().decode(stxn.txn.note));
-
-//   console.log('Valid? ', verifySignedTransaction(stxn));
-// };
-// function verifySignedTransaction(stxn: SignedTransaction) {
-//   if (stxn.sig === undefined) return false;
-
-//   const pk_bytes = stxn.txn.from.publicKey;
-
-//   const sig_bytes = new Uint8Array(stxn.sig);
-
-//   const txn_bytes = algosdk.encodeObj(stxn.txn.get_obj_for_encoding());
-//   const msg_bytes = new Uint8Array(txn_bytes.length + 2);
-//   msg_bytes.set(Buffer.from('TX'));
-//   msg_bytes.set(txn_bytes, 2);
-
-//   return nacl.sign.detached.verify(msg_bytes, sig_bytes, pk_bytes);
-// }
-
 export const createMainContractAndFullTest = async (
   client: algosdk.Algodv2,
   userAddress: string,
