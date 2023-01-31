@@ -4,7 +4,7 @@ import { useWallet } from '@txnlab/use-wallet';
 import algosdk, { encodeUnsignedTransaction } from 'algosdk';
 import { Card, InputNumber, Modal } from 'antd';
 import { useRef, useState } from 'react';
-import { createMainContractAndFullTest, createTokenGenerator, verify, seller_sell_asset } from '../api/deployment';
+import { createMainContractAndFullTest, createTokenGenerator, verify, sellerSellAsset } from '../api/deployment';
 import { getListNFT, initClient } from '../api/walletInteract';
 import NFTList from '../components/NFTList';
 import styles from '../styles/Home.module.scss'; // use to name className by command style.<name>
@@ -39,7 +39,7 @@ const Home = () => {
     if (activeAddress) {
       // await atomicMultiUser(algodClient, activeAddress, signTransactions, sendTransactions);
       // createMainContractAndFullTest(algodClient, activeAddress, signTransactions, sendTransactions);
-      seller_sell_asset(algodClient, activeAddress, 500, 1, signTransactions, sendTransactions);
+      sellerSellAsset(algodClient, activeAddress, 5000000, 1, signTransactions, sendTransactions);
       //
       //
       //

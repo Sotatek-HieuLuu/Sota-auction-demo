@@ -522,15 +522,14 @@ export const createMainContractAndFullTest = async (
   console.log('done test item');
 };
 
-// TODO: marketplace here
-
+// Marketplace here
 // Test flow:
 /*
 1. Create, sell, buy asset - OK
 2. Create, sell, cancel sell - OK
 */
 // Marketplace to sell NFT
-export const seller_sell_asset = async (
+export const sellerSellAsset = async (
   client: algosdk.Algodv2,
   sellerAddress: string,
   assetPrice: number,
@@ -540,27 +539,27 @@ export const seller_sell_asset = async (
 ) => {
   const sellerPK = importAccount();
   // Seller mint NFT
-  const assetIDFromSellerMintAsset = +(await seller_mint_nft(client, sellerPK, assetQuantity));
+  const assetIDFromSellerMintAsset = +(await sellerMintAsset(client, sellerPK, assetQuantity));
   // Seller create app
-  const appId = +(await sellerCreateApp(client, sellerPK, assetPrice, assetQuantity, assetIDFromSellerMintAsset));
-  const appAddress = algosdk.getApplicationAddress(appId);
+  const appID = +(await sellerCreateApp(client, sellerPK, assetPrice, assetQuantity, assetIDFromSellerMintAsset));
+  const appAddress = algosdk.getApplicationAddress(appID);
   // Seller sell asset on marketplace
-  await sell_asset(client, sellerPK, appId, appAddress, assetQuantity, assetIDFromSellerMintAsset);
+  await sellAsset(client, sellerPK, appID, appAddress, assetQuantity, assetIDFromSellerMintAsset);
 
-  // 1. Test buyer buy asset
+  // 1. Test buyer buy asset: uncomment these two lines below
   // const buyerPK = importBuyerAccount();
-  // await buyer_buy_asset(client, buyerPK, sellerPK, appId, appAddress, assetPrice, assetIDFromSellerMintAsset, signTransactions, sendTransactions);
+  // await buyerBuyAsset(client, buyerPK, sellerPK, appID, appAddress, assetPrice, assetIDFromSellerMintAsset, signTransactions, sendTransactions);
 
   // 2. Test seller cancel sell asset
-  await seller_cancel_sell(client, sellerPK, appId, appAddress, assetIDFromSellerMintAsset, assetPrice, signTransactions, sendTransactions);
+  await sellerCancelSell(client, sellerPK, appID, appAddress, assetIDFromSellerMintAsset, assetPrice, signTransactions, sendTransactions);
 }
-// Seller mint NFT
-export const seller_mint_nft = async (
+// Seller mint asset
+export const sellerMintAsset = async (
   client: algosdk.Algodv2,
   sellerPK: Account,
   assetQuantity: number,
 ) => {
-  console.log("Start minting nft");
+  console.log("Start minting asset");
   let params = await client.getTransactionParams().do();
   const txn = algosdk.makeAssetCreateTxnWithSuggestedParams(
     sellerPK.addr,
@@ -580,15 +579,15 @@ export const seller_mint_nft = async (
   );
   const rawSignedTxn = txn.signTxn(sellerPK.sk);
   const tx = (await client.sendRawTransaction(rawSignedTxn).do());
-  let assetIDTemp = null;
+  let assetID = null;
   // wait for transaction to be confirmed
   const confirmedTxn = await algosdk.waitForConfirmation(client, tx.txId, 4);
   //Get the completed Transaction
   console.log("Transaction " + tx.txId + " confirmed in round " + confirmedTxn["confirmed-round"]);
-  assetIDTemp = confirmedTxn["asset-index"];
-  console.log("assetIDTemp = " + assetIDTemp);
-  console.log("done mint nft for seller");
-  return assetIDTemp;
+  assetID = confirmedTxn["asset-index"];
+  console.log("assetID = " + assetID);
+  console.log("done mint asset for seller");
+  return assetID;
 }
 
 // Seller create app
@@ -623,10 +622,10 @@ export const sellerCreateApp = async (
   await client.sendRawTransaction(signedTxn).do();
   await algosdk.waitForConfirmation(client, txId, 4);
   const transactionResponse = await client.pendingTransactionInformation(txId).do();
-  const appId = transactionResponse['application-index'];
-  const appAddress = algosdk.getApplicationAddress(appId);
+  const appID = transactionResponse['application-index'];
+  const appAddress = algosdk.getApplicationAddress(appID);
 
-  console.log('appId', appId);
+  console.log('appID', appID);
   console.log('appAddress', appAddress);
   //send 0.1 Algo
   const paymentParams = await client.getTransactionParams().do();
@@ -644,7 +643,7 @@ export const sellerCreateApp = async (
   const signedPaymentTxn = paymentTxn.signTxn(sellerPK.sk);
   await client.sendRawTransaction(signedPaymentTxn).do();
   await algosdk.waitForConfirmation(client, paymentTxId, 4);
-  return appId;
+  return appID;
 }
 
 // Seller sell asset on marketplace
@@ -653,10 +652,10 @@ export const sellerCreateApp = async (
     + Smart Contract Opt-in to NFT
     + Seller sends NFT to SC
 */
-export const sell_asset = async (
+export const sellAsset = async (
   client: algosdk.Algodv2,
   sellerPK: Account,
-  appId: number,
+  appID: number,
   appAddress: string,
   assetQuantity: number,
   assetIDFromSellerMintAsset: number,
@@ -671,12 +670,11 @@ export const sell_asset = async (
   makeApplicationParams.flatFee = true;
 
   let makeAssetTransferParams = await client.getTransactionParams().do();
-  makeAssetTransferParams.fee = 1000; //3000
-  makeAssetTransferParams.flatFee = true;
+
   //send 0.1 Algo and NFT to Smart Contract
   const appArgs = [
     new Uint8Array(Buffer.from('sell')),
-    encodeUint64(appId),
+    encodeUint64(appID),
     algosdk.decodeAddress(sellerPK.addr).publicKey,
     algosdk.decodeAddress(sellerPK.addr).publicKey,
     encodeUint64(assetIDFromSellerMintAsset),
@@ -694,7 +692,7 @@ export const sell_asset = async (
   const sellTxn = algosdk.makeApplicationNoOpTxn(
     sellerPK.addr,
     makeApplicationParams,
-    appId,
+    appID,
     appArgs,
     [sellerPK.addr],
     undefined,
@@ -726,11 +724,11 @@ export const sell_asset = async (
   + Smart contract send ASA to buyer 
   + Delete app
 */
-export const buyer_buy_asset = async (
+export const buyerBuyAsset = async (
   client: algosdk.Algodv2,
   buyerPK: Account,
   sellerPK: Account,
-  appId: number,
+  appID: number,
   appAddress: string,
   assetPrice: number,
   assetIDFromSellerMintAsset: number,
@@ -740,8 +738,6 @@ export const buyer_buy_asset = async (
   console.log("Buyer start buy asset");
   const appArgs = [new Uint8Array(Buffer.from('buy'))];
   let makePaymentParams = await client.getTransactionParams().do();
-  makePaymentParams.fee = 3 * algosdk.ALGORAND_MIN_TX_FEE;
-  makePaymentParams.flatFee = true;
   const buyerOptIn = algosdk.makeAssetTransferTxnWithSuggestedParams(
     buyerPK.addr,
     buyerPK.addr,
@@ -766,7 +762,7 @@ export const buyer_buy_asset = async (
   const transferAssetTxn = algosdk.makeApplicationDeleteTxn(
     buyerPK.addr,
     makePaymentParams,
-    appId,
+    appID,
     appArgs,
     [sellerPK.addr],
     undefined,
@@ -786,7 +782,7 @@ export const buyer_buy_asset = async (
   + Smart Contract send remainder Algo and asset to seller
   + Delete app
 */
-export const seller_cancel_sell = async (
+export const sellerCancelSell = async (
   client: algosdk.Algodv2,
   sellerPK: Account,
   appID: number,
@@ -799,9 +795,6 @@ export const seller_cancel_sell = async (
   console.log("Start cancel sell asset");
 
   let makePaymentParams = await client.getTransactionParams().do();
-  makePaymentParams.fee = 2 * algosdk.ALGORAND_MIN_TX_FEE;
-  makePaymentParams.flatFee = true;
-
   const appArgs = [new Uint8Array(Buffer.from('cancel'))];
 
   const paymentTxn = algosdk.makePaymentTxnWithSuggestedParams(
@@ -1348,7 +1341,8 @@ const getMainContract = async (client: algosdk.Algodv2) => {
 };
 
 const getMainContractMarketplace = async (client: algosdk.Algodv2) => {
-  const approvalProgram = '#pragma version 5\ntxn ApplicationID\nint 0\n==\nbnz main_l14\ntxn OnCompletion\nint NoOp\n==\nbnz main_l11\ntxn OnCompletion\nint DeleteApplication\n==\nbnz main_l6\ntxn OnCompletion\nint OptIn\n==\ntxn OnCompletion\nint CloseOut\n==\n||\ntxn OnCompletion\nint UpdateApplication\n==\n||\nbnz main_l5\nerr\nmain_l5:\nint 0\nreturn\nmain_l6:\ntxna ApplicationArgs 0\nbyte "buy"\n==\nbnz main_l10\ntxna ApplicationArgs 0\nbyte "cancel"\n==\nbnz main_l9\nerr\nmain_l9:\ntxn Sender\nbyte "seller"\napp_global_get\n==\ntxn Sender\nglobal CreatorAddress\n==\n||\nassert\nbyte "nft_id"\napp_global_get\ncallsub closeNFTTo_0\nbyte "seller"\napp_global_get\ncallsub closeAccountTo_1\nbyte "on_cancel"\nlog\nint 1\nreturn\nmain_l10:\nglobal CurrentApplicationAddress\nbyte "nft_id"\napp_global_get\nasset_holding_get AssetBalance\nstore 1\nstore 0\nload 1\nload 0\nint 0\n>\n&&\nload 0\nbyte "nft_quantity"\napp_global_get\n==\n&&\ntxn GroupIndex\nint 1\n-\ngtxns TypeEnum\nint pay\n==\n&&\ntxn GroupIndex\nint 1\n-\ngtxns Sender\ntxn Sender\n==\n&&\ntxn GroupIndex\nint 1\n-\ngtxns Receiver\nglobal CurrentApplicationAddress\n==\n&&\ntxn GroupIndex\nint 1\n-\ngtxns Amount\nbyte "nft_price"\napp_global_get\n>=\n&&\nassert\nbyte "nft_id"\napp_global_get\ncallsub closeNFTTo_0\nbyte "seller"\napp_global_get\ncallsub closeAccountTo_1\nbyte "on_buy"\nlog\nint 1\nreturn\nmain_l11:\ntxna ApplicationArgs 0\nbyte "sell"\n==\nbnz main_l13\nerr\nmain_l13:\nbyte "nft_status"\napp_global_get\nbyte "on_sell"\n!=\nassert\nitxn_begin\nint axfer\nitxn_field TypeEnum\nbyte "nft_id"\napp_global_get\nitxn_field XferAsset\nglobal CurrentApplicationAddress\nitxn_field AssetReceiver\nitxn_submit\nbyte "nft_status"\nbyte "on_sell"\napp_global_put\nint 1\nreturn\nmain_l14:\nbyte "seller"\ntxna ApplicationArgs 0\napp_global_put\nbyte "nft_id"\ntxna ApplicationArgs 1\nbtoi\napp_global_put\nbyte "nft_price"\ntxna ApplicationArgs 2\nbtoi\napp_global_put\nbyte "nft_quantity"\ntxna ApplicationArgs 3\nbtoi\napp_global_put\nbyte "nft_status"\nbyte "on_create"\napp_global_put\nint 1\nreturn\n\n// closeNFTTo\ncloseNFTTo_0:\nstore 2\nglobal CurrentApplicationAddress\nload 2\nasset_holding_get AssetBalance\nstore 4\nstore 3\nload 4\nbz closeNFTTo_0_l2\nitxn_begin\nint axfer\nitxn_field TypeEnum\nload 2\nitxn_field XferAsset\ntxn Sender\nitxn_field AssetCloseTo\nitxn_submit\ncloseNFTTo_0_l2:\nretsub\n\n// closeAccountTo\ncloseAccountTo_1:\nstore 5\nglobal CurrentApplicationAddress\nbalance\nint 0\n!=\nbz closeAccountTo_1_l2\nitxn_begin\nint pay\nitxn_field TypeEnum\nload 5\nitxn_field CloseRemainderTo\nitxn_submit\ncloseAccountTo_1_l2:\nretsub'
+  const approvalProgram =
+    '#pragma version 5\ntxn ApplicationID\nint 0\n==\nbnz main_l14\ntxn OnCompletion\nint NoOp\n==\nbnz main_l11\ntxn OnCompletion\nint DeleteApplication\n==\nbnz main_l6\ntxn OnCompletion\nint OptIn\n==\ntxn OnCompletion\nint CloseOut\n==\n||\ntxn OnCompletion\nint UpdateApplication\n==\n||\nbnz main_l5\nerr\nmain_l5:\nint 0\nreturn\nmain_l6:\ntxna ApplicationArgs 0\nbyte "buy"\n==\nbnz main_l10\ntxna ApplicationArgs 0\nbyte "cancel"\n==\nbnz main_l9\nerr\nmain_l9:\ntxn Sender\nbyte "seller"\napp_global_get\n==\ntxn Sender\nglobal CreatorAddress\n==\n||\nassert\nbyte "nft_id"\napp_global_get\ncallsub closeNFTTo_0\nbyte "seller"\napp_global_get\ncallsub closeAccountTo_1\nbyte "on_cancel"\nlog\nint 1\nreturn\nmain_l10:\nglobal CurrentApplicationAddress\nbyte "nft_id"\napp_global_get\nasset_holding_get AssetBalance\nstore 1\nstore 0\nload 1\nload 0\nint 0\n>\n&&\nload 0\nbyte "nft_quantity"\napp_global_get\n==\n&&\ntxn GroupIndex\nint 1\n-\ngtxns TypeEnum\nint pay\n==\n&&\ntxn GroupIndex\nint 1\n-\ngtxns Sender\ntxn Sender\n==\n&&\ntxn GroupIndex\nint 1\n-\ngtxns Receiver\nglobal CurrentApplicationAddress\n==\n&&\ntxn GroupIndex\nint 1\n-\ngtxns Amount\nbyte "nft_price"\napp_global_get\n>=\n&&\nassert\nbyte "nft_id"\napp_global_get\ncallsub closeNFTTo_0\nbyte "seller"\napp_global_get\ncallsub closeAccountTo_1\nbyte "on_buy"\nlog\nint 1\nreturn\nmain_l11:\ntxna ApplicationArgs 0\nbyte "sell"\n==\nbnz main_l13\nerr\nmain_l13:\nbyte "nft_status"\napp_global_get\nbyte "on_sell"\n!=\nassert\nitxn_begin\nint axfer\nitxn_field TypeEnum\nbyte "nft_id"\napp_global_get\nitxn_field XferAsset\nglobal CurrentApplicationAddress\nitxn_field AssetReceiver\nitxn_submit\nbyte "nft_status"\nbyte "on_sell"\napp_global_put\nint 1\nreturn\nmain_l14:\nbyte "seller"\ntxna ApplicationArgs 0\napp_global_put\nbyte "nft_id"\ntxna ApplicationArgs 1\nbtoi\napp_global_put\nbyte "nft_price"\ntxna ApplicationArgs 2\nbtoi\napp_global_put\nbyte "nft_quantity"\ntxna ApplicationArgs 3\nbtoi\napp_global_put\nbyte "nft_quantity"\napp_global_get\nint 0\n>\nassert\nbyte "nft_status"\nbyte "on_create"\napp_global_put\nint 1\nreturn\n\n// closeNFTTo\ncloseNFTTo_0:\nstore 2\nglobal CurrentApplicationAddress\nload 2\nasset_holding_get AssetBalance\nstore 4\nstore 3\nload 4\nbz closeNFTTo_0_l2\nitxn_begin\nint axfer\nitxn_field TypeEnum\nload 2\nitxn_field XferAsset\ntxn Sender\nitxn_field AssetCloseTo\nitxn_submit\ncloseNFTTo_0_l2:\nretsub\n\n// closeAccountTo\ncloseAccountTo_1:\nstore 5\nglobal CurrentApplicationAddress\nbalance\nint 0\n!=\nbz closeAccountTo_1_l2\nitxn_begin\nint pay\nitxn_field TypeEnum\nload 5\nitxn_field CloseRemainderTo\nitxn_submit\ncloseAccountTo_1_l2:\nretsub'
   const clearStateProgram = '#pragma version 5\nint 1\nreturn';
 
   const approvalCompile = await compileProgram(client, approvalProgram);
