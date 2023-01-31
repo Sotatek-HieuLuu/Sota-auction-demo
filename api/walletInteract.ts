@@ -11,9 +11,9 @@ export const importAccount = () => {
 };
 
 export const initClient = (): algosdk.Algodv2 => {
-  const algodToken = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-  const algodServer = 'http://localhost';
-  const algodPort = 4001;
+  const algodToken = { 'X-API-KEY': '6EbKQ0TN6n6QyFOKJxWb5aoQGe4J0t5660qg3PSE' };
+  const algodServer = 'https://testnet-algorand.api.purestake.io/ps2';
+  const algodPort = '';
   const algodClient = new algosdk.Algodv2(algodToken, algodServer, algodPort);
 
   return algodClient;

@@ -1,7 +1,9 @@
 import algosdk, {
+  Account,
   assignGroupID,
   encodeUint64
 } from 'algosdk';
+import { importAccount } from './walletInteract';
 
 // export const verify = async (
 //   client: algosdk.Algodv2,
@@ -520,130 +522,201 @@ export const createMainContractAndFullTest = async (
   console.log('done test item');
 };
 
-// TODO: test flow:
+// TODO: marketplace here
+
+// Test flow:
 /*
-1. Create, sell, buy asset
-2. Create, sell, cancel sell
+1. Create, sell, buy asset - OK
+2. Create, sell, cancel sell - OK
 */
 // Marketplace to sell NFT
-export const sellNFT = async (
+export const seller_sell_asset = async (
   client: algosdk.Algodv2,
   sellerAddress: string,
-  assetID: number,
   assetPrice: number,
   assetQuantity: number,
   signTransactions: (encodedTransaction: Uint8Array[]) => Promise<Uint8Array[]>,
   sendTransactions: (transactions: Uint8Array[], waitRoundsToConfirm?: number | undefined) => Promise<any>,
 ) => {
+  const sellerPK = importAccount();
+  // Seller mint NFT
+  const assetIDFromSellerMintAsset = +(await seller_mint_nft(client, sellerPK, assetQuantity));
+  // Seller create app
+  const appId = +(await sellerCreateApp(client, sellerPK, assetPrice, assetQuantity, assetIDFromSellerMintAsset));
+  const appAddress = algosdk.getApplicationAddress(appId);
+  // Seller sell asset on marketplace
+  await sell_asset(client, sellerPK, appId, appAddress, assetQuantity, assetIDFromSellerMintAsset);
 
+  // 1. Test buyer buy asset
+  // const buyerPK = importBuyerAccount();
+  // await buyer_buy_asset(client, buyerPK, sellerPK, appId, appAddress, assetPrice, assetIDFromSellerMintAsset, signTransactions, sendTransactions);
+
+  // 2. Test seller cancel sell asset
+  await seller_cancel_sell(client, sellerPK, appId, appAddress, assetIDFromSellerMintAsset, assetPrice, signTransactions, sendTransactions);
+}
+// Seller mint NFT
+export const seller_mint_nft = async (
+  client: algosdk.Algodv2,
+  sellerPK: Account,
+  assetQuantity: number,
+) => {
+  console.log("Start minting nft");
+  let params = await client.getTransactionParams().do();
+  const txn = algosdk.makeAssetCreateTxnWithSuggestedParams(
+    sellerPK.addr,
+    new Uint8Array(0),
+    assetQuantity,
+    0,
+    false,
+    sellerPK.addr,
+    sellerPK.addr,
+    sellerPK.addr,
+    sellerPK.addr,
+    'sob NFT',
+    'son NFTS',
+    'https://news.artnet.com/app/news-upload/2022/06/94263c4219a6ae9b68fc8b127db10b8c.png',
+    '',
+    params,
+  );
+  const rawSignedTxn = txn.signTxn(sellerPK.sk);
+  const tx = (await client.sendRawTransaction(rawSignedTxn).do());
+  let assetIDTemp = null;
+  // wait for transaction to be confirmed
+  const confirmedTxn = await algosdk.waitForConfirmation(client, tx.txId, 4);
+  //Get the completed Transaction
+  console.log("Transaction " + tx.txId + " confirmed in round " + confirmedTxn["confirmed-round"]);
+  assetIDTemp = confirmedTxn["asset-index"];
+  console.log("assetIDTemp = " + assetIDTemp);
+  console.log("done mint nft for seller");
+  return assetIDTemp;
+}
+
+// Seller create app
+export const sellerCreateApp = async (
+  client: algosdk.Algodv2,
+  sellerPK: Account,
+  assetPrice: number,
+  assetQuantity: number,
+  assetIDFromSellerMintAsset: number,
+) => {
   const contract = await getMainContractMarketplace(client);
-  //Create app
-  const createApp = async () => {
-    const appArgs = [
-      algosdk.decodeAddress(sellerAddress).publicKey, 
-      algosdk.encodeUint64(assetID), 
-      algosdk.encodeUint64(assetPrice), 
-      algosdk.encodeUint64(assetQuantity)
-    ];
+  const appArgs = [algosdk.decodeAddress(sellerPK.addr).publicKey, encodeUint64(assetIDFromSellerMintAsset),
+  encodeUint64(assetPrice), encodeUint64(assetQuantity)];
+  const onComplete = algosdk.OnApplicationComplete.NoOpOC;
+  const params = await client.getTransactionParams().do();
 
-    const onComplete = algosdk.OnApplicationComplete.NoOpOC;
-    const params = await client.getTransactionParams().do();
-    const txn = algosdk.makeApplicationCreateTxn(
-      sellerAddress,
-      params,
-      onComplete,
-      contract.approvalCompile,
-      contract.clearStateCompile,
-      0,
-      0,
-      0,
-      2,
-      appArgs,
-    );
-    const txId = txn.txID().toString();
+  const txn = algosdk.makeApplicationCreateTxn(
+    sellerPK.addr,
+    params,
+    onComplete,
+    contract.approvalCompile,
+    contract.clearStateCompile,
+    0,
+    0,
+    5,
+    2,
+    appArgs,
+  );
+  const txId = txn.txID().toString();
 
-    const txnGroup = assignGroupID([txn]);
-    const encodeTxn = encodeUnsignedTransactions(txnGroup);
-    const signedTxn = await signTransactions(encodeTxn);
-    const trans = await sendTransactions(signedTxn, 4);
-
-    const transactionResponse = await client.pendingTransactionInformation(txId).do();
-    const appId = transactionResponse['application-index'];
-    const appAddress = algosdk.getApplicationAddress(appId);
-
-    console.log('appId', appId);
-    console.log('appAddress', appAddress);
-    return appId;
-  };
-  const appId = +(await createApp());
+  const signedTxn = txn.signTxn(sellerPK.sk);
+  await client.sendRawTransaction(signedTxn).do();
+  await algosdk.waitForConfirmation(client, txId, 4);
+  const transactionResponse = await client.pendingTransactionInformation(txId).do();
+  const appId = transactionResponse['application-index'];
   const appAddress = algosdk.getApplicationAddress(appId);
 
-  /* Test on_sell NFT
+  console.log('appId', appId);
+  console.log('appAddress', appAddress);
+  //send 0.1 Algo
+  const paymentParams = await client.getTransactionParams().do();
+
+  const paymentTxn = algosdk.makePaymentTxnWithSuggestedParams(
+    sellerPK.addr,
+    appAddress,
+    100000, //0.1 Algo
+    undefined,
+    undefined,
+    paymentParams,
+  );
+  const paymentTxId = txn.txID().toString();
+
+  const signedPaymentTxn = paymentTxn.signTxn(sellerPK.sk);
+  await client.sendRawTransaction(signedPaymentTxn).do();
+  await algosdk.waitForConfirmation(client, paymentTxId, 4);
+  return appId;
+}
+
+// Seller sell asset on marketplace
+/* Seller sell asset on marketplace
     + Seller sends 0.1 Algo to Smart Contract
     + Smart Contract Opt-in to NFT
     + Seller sends NFT to SC
-  */
-  {
-    const on_sell_asset = async () => {
-      console.log("Start on sell asset");
-      let makePaymentParams = await client.getTransactionParams().do();
-      makePaymentParams.fee = 4 * algosdk.ALGORAND_MIN_TX_FEE;
-      makePaymentParams.flatFee = true;
+*/
+export const sell_asset = async (
+  client: algosdk.Algodv2,
+  sellerPK: Account,
+  appId: number,
+  appAddress: string,
+  assetQuantity: number,
+  assetIDFromSellerMintAsset: number,
+) => {
+  console.log("Start on sell asset");
+  let makePaymentParams = await client.getTransactionParams().do();
+  makePaymentParams.fee = 4 * algosdk.ALGORAND_MIN_TX_FEE;
+  makePaymentParams.flatFee = true;
 
-      let makeApplicationParams = await client.getTransactionParams().do();
-      makeApplicationParams.fee = 0;
-      makeApplicationParams.flatFee = true;
+  let makeApplicationParams = await client.getTransactionParams().do();
+  makeApplicationParams.fee = 0;
+  makeApplicationParams.flatFee = true;
 
-      let makeAssetTransferParams = await client.getTransactionParams().do();
-      makeAssetTransferParams.fee = 1400; //3000
-      makeAssetTransferParams.flatFee = true;
-      //send 0.1 Algo and NFT to Smart Contract
+  let makeAssetTransferParams = await client.getTransactionParams().do();
+  makeAssetTransferParams.fee = 1000; //3000
+  makeAssetTransferParams.flatFee = true;
+  //send 0.1 Algo and NFT to Smart Contract
+  const appArgs = [
+    new Uint8Array(Buffer.from('sell')),
+    encodeUint64(appId),
+    algosdk.decodeAddress(sellerPK.addr).publicKey,
+    algosdk.decodeAddress(sellerPK.addr).publicKey,
+    encodeUint64(assetIDFromSellerMintAsset),
+    encodeUint64(assetQuantity)
+  ];
 
-      const appArgs = [
-        new Uint8Array(Buffer.from('sell')), 
-        encodeUint64(appId), 
-        algosdk.decodeAddress(sellerAddress).publicKey, 
-        algosdk.decodeAddress(sellerAddress).publicKey, 
-        encodeUint64(assetID), 
-        encodeUint64(assetQuantity)
-      ];
-      
-      const paymentTxn = algosdk.makePaymentTxnWithSuggestedParams(
-        sellerAddress,
-        appAddress,
-        100000, //0.1 Algo
-        undefined,
-        undefined,
-        makePaymentParams,
-      );
-      const sellTxn = algosdk.makeApplicationNoOpTxn(
-        sellerAddress,
-        makeApplicationParams,
-        appId,
-        appArgs,
-        [sellerAddress],
-        undefined,
-        [assetID],
-      );
-      const transfetAsset = algosdk.makeAssetTransferTxnWithSuggestedParams(
-        sellerAddress,
-        appAddress,
-        undefined,
-        undefined,
-        assetQuantity,
-        undefined,
-        assetID,
-        makeAssetTransferParams,
-      );
+  const paymentTxn = algosdk.makePaymentTxnWithSuggestedParams(
+    sellerPK.addr,
+    appAddress,
+    100000, //0.1 Algo
+    undefined,
+    undefined,
+    makePaymentParams,
+  );
+  const sellTxn = algosdk.makeApplicationNoOpTxn(
+    sellerPK.addr,
+    makeApplicationParams,
+    appId,
+    appArgs,
+    [sellerPK.addr],
+    undefined,
+    [assetIDFromSellerMintAsset],
+  );
+  const transferAsset = algosdk.makeAssetTransferTxnWithSuggestedParams(
+    sellerPK.addr,
+    appAddress,
+    undefined,
+    undefined,
+    assetQuantity,
+    undefined,
+    assetIDFromSellerMintAsset,
+    makeAssetTransferParams,
+  );
 
-      let txgroup = algosdk.assignGroupID([paymentTxn, sellTxn, transfetAsset]);
-      const encodeTxn = encodeUnsignedTransactions(txgroup);
-      const signedTxn = await signTransactions(encodeTxn);
-      const trans = await sendTransactions(signedTxn, 4);
-    };
-    await on_sell_asset();
-    console.log("Done on sell asset");
-  }
+  let txgroup = algosdk.assignGroupID([paymentTxn, sellTxn, transferAsset]);
+  await client.sendRawTransaction([txgroup[0].signTxn(sellerPK.sk), txgroup[1].signTxn(sellerPK.sk), txgroup[2].signTxn(sellerPK.sk)]).do();
+  await algosdk.waitForConfirmation(client, sellTxn.txID(), 4);
+  const transactionResponse = await client.pendingTransactionInformation(sellTxn.txID()).do();
+  console.log(transactionResponse);
+  console.log("Done on sell asset");
 }
 
 /* Test on_buy asset
@@ -653,28 +726,36 @@ export const sellNFT = async (
   + Smart contract send ASA to buyer 
   + Delete app
 */
-export const on_buy_asset = async (
+export const buyer_buy_asset = async (
   client: algosdk.Algodv2,
-  appID: number,
-  buyerAddress: string,
+  buyerPK: Account,
+  sellerPK: Account,
+  appId: number,
+  appAddress: string,
   assetPrice: number,
-  assetID: number,
+  assetIDFromSellerMintAsset: number,
   signTransactions: (encodedTransaction: Uint8Array[]) => Promise<Uint8Array[]>,
   sendTransactions: (transactions: Uint8Array[], waitRoundsToConfirm?: number | undefined) => Promise<any>,
 ) => {
   console.log("Buyer start buy asset");
-  const appArgs = [new Uint8Array(Buffer.from('buy')), encodeUint64(appID), algosdk.decodeAddress(buyerAddress).publicKey, encodeUint64(assetPrice)];
-  const appAddress = algosdk.getApplicationAddress(appID);
-  let makeApplicationParams = await client.getTransactionParams().do();
-  makeApplicationParams.fee = 0;
-  makeApplicationParams.flatFee = true;
-
+  const appArgs = [new Uint8Array(Buffer.from('buy'))];
   let makePaymentParams = await client.getTransactionParams().do();
   makePaymentParams.fee = 3 * algosdk.ALGORAND_MIN_TX_FEE;
   makePaymentParams.flatFee = true;
+  const buyerOptIn = algosdk.makeAssetTransferTxnWithSuggestedParams(
+    buyerPK.addr,
+    buyerPK.addr,
+    undefined,
+    undefined,
+    0,
+    undefined,
+    assetIDFromSellerMintAsset,
+    makePaymentParams,
+    undefined,
+  )
 
   const paymentTxn = algosdk.makePaymentTxnWithSuggestedParams(
-    buyerAddress,
+    buyerPK.addr,
     appAddress,
     assetPrice,
     undefined,
@@ -683,77 +764,70 @@ export const on_buy_asset = async (
   );
 
   const transferAssetTxn = algosdk.makeApplicationDeleteTxn(
-    buyerAddress,
-    makeApplicationParams,
-    appID,
+    buyerPK.addr,
+    makePaymentParams,
+    appId,
     appArgs,
-    [buyerAddress],
+    [sellerPK.addr],
     undefined,
-    [assetID],
+    [assetIDFromSellerMintAsset],
   )
 
-  let txgroup = algosdk.assignGroupID([paymentTxn, transferAssetTxn]);
-
-  const encodeTxn = encodeUnsignedTransactions(txgroup);
-  const signedTxn = await signTransactions(encodeTxn);
-  const trans = await sendTransactions(signedTxn, 4);
+  let txgroup = algosdk.assignGroupID([buyerOptIn, paymentTxn, transferAssetTxn]);
+  await client.sendRawTransaction([txgroup[0].signTxn(buyerPK.sk), txgroup[1].signTxn(buyerPK.sk), txgroup[2].signTxn(buyerPK.sk)]).do();
+  await algosdk.waitForConfirmation(client, transferAssetTxn.txID(), 4);
+  const transactionResponse = await client.pendingTransactionInformation(transferAssetTxn.txID()).do();
+  console.log(transactionResponse);
   console.log("Buy successful");
 };
+// Seller cancel sell asset on marketplace
 // Test on_cancel sell asset
-  /*
-    + Smart Contract send remainder Algo and asset to seller
-    + Delete app
-  */
-export const on_cancel_sell = async (
+/*
+  + Smart Contract send remainder Algo and asset to seller
+  + Delete app
+*/
+export const seller_cancel_sell = async (
   client: algosdk.Algodv2,
-  sellerAddress: string,
+  sellerPK: Account,
   appID: number,
+  appAddress: string,
   assetID: number,
   assetPrice: number,
-  assetQuantity: number,
   signTransactions: (encodedTransaction: Uint8Array[]) => Promise<Uint8Array[]>,
   sendTransactions: (transactions: Uint8Array[], waitRoundsToConfirm?: number | undefined) => Promise<any>,
 ) => {
-  console.log("Cancel sell asset");
-  const admin = importAccount2();
-
-  let makeApplicationParams = await client.getTransactionParams().do();
-  makeApplicationParams.fee = 0;
-  makeApplicationParams.flatFee = true;
+  console.log("Start cancel sell asset");
 
   let makePaymentParams = await client.getTransactionParams().do();
   makePaymentParams.fee = 2 * algosdk.ALGORAND_MIN_TX_FEE;
   makePaymentParams.flatFee = true;
 
-  const appArgs = [
-    new Uint8Array(Buffer.from('cancel')), 
-    encodeUint64(appID), 
-    algosdk.decodeAddress(sellerAddress).publicKey, 
-  ];
-  
+  const appArgs = [new Uint8Array(Buffer.from('cancel'))];
+
   const paymentTxn = algosdk.makePaymentTxnWithSuggestedParams(
-    sellerAddress,
-    admin.addr,
+    sellerPK.addr,
+    appAddress,
     assetPrice,
-    sellerAddress,
+    undefined,
     undefined,
     makePaymentParams,
   )
-  
+
   const cancelSellTxn = algosdk.makeApplicationDeleteTxn(
-    sellerAddress,
-    makeApplicationParams,
+    sellerPK.addr,
+    makePaymentParams,
     appID,
     appArgs,
-    [sellerAddress],
+    [sellerPK.addr],
     undefined,
     [assetID],
   )
-
   let txgroup = algosdk.assignGroupID([paymentTxn, cancelSellTxn]);
-  const encodeTxn = encodeUnsignedTransactions(txgroup);
-  const signedTxn = await signTransactions(encodeTxn);
-  const trans = await sendTransactions(signedTxn, 4);
+  await client.sendRawTransaction([txgroup[0].signTxn(sellerPK.sk), txgroup[1].signTxn(sellerPK.sk)]).do();
+  await algosdk.waitForConfirmation(client, cancelSellTxn.txID(), 4);
+  const transactionResponse = await client.pendingTransactionInformation(cancelSellTxn.txID()).do();
+  console.log(transactionResponse);
+
   console.log("Cancel sell asset successful");
 };
 
@@ -1274,8 +1348,7 @@ const getMainContract = async (client: algosdk.Algodv2) => {
 };
 
 const getMainContractMarketplace = async (client: algosdk.Algodv2) => {
-  const approvalProgram =
-  '#pragma version 5\ntxn ApplicationID\nint 0\n==\nbnz main_l14\ntxn OnCompletion\nint NoOp\n==\nbnz main_l11\ntxn OnCompletion\nint DeleteApplication\n==\nbnz main_l6\ntxn OnCompletion\nint OptIn\n==\ntxn OnCompletion\nint CloseOut\n==\n||\ntxn OnCompletion\nint UpdateApplication\n==\n||\nbnz main_l5\nerr\nmain_l5:\nint 0\nreturn\nmain_l6:\ntxna ApplicationArgs 0\nbyte "buy"\n==\nbnz main_l10\ntxna ApplicationArgs 0\nbyte "cancel"\n==\nbnz main_l9\nerr\nmain_l9:\ntxn Sender\nbyte "seller"\napp_global_get\n==\ntxn Sender\nglobal CreatorAddress\n==\n||\nassert\nbyte "nft_id"\napp_global_get\ncallsub closeNFTTo_0\nbyte "seller"\napp_global_get\ncallsub closeAccountTo_1\nbyte "on_cancel"\nlog\nint 1\nreturn\nmain_l10:\nglobal CurrentApplicationAddress\nbyte "nft_id"\napp_global_get\nasset_holding_get AssetBalance\nstore 1\nstore 0\nload 1\nload 0\nint 0\n>\n&&\nload 0\nbyte "nft_quantity"\napp_global_get\n==\n&&\ntxn GroupIndex\nint 1\n-\ngtxns TypeEnum\nint pay\n==\n&&\ntxn GroupIndex\nint 1\n-\ngtxns Sender\ntxn Sender\n==\n&&\ntxn GroupIndex\nint 1\n-\ngtxns Receiver\nglobal CurrentApplicationAddress\n==\n&&\ntxn GroupIndex\nint 1\n-\ngtxns Amount\nglobal MinTxnFee\n>=\n&&\ntxn GroupIndex\nint 1\n-\ngtxns Amount\nbyte "nft_price"\napp_global_get\n>=\n&&\nassert\nbyte "nft_id"\napp_global_get\ncallsub closeNFTTo_0\nbyte "seller"\napp_global_get\ncallsub closeAccountTo_1\nbyte "on_buy"\nlog\nint 1\nreturn\nmain_l11:\ntxna ApplicationArgs 0\nbyte "sell"\n==\nbnz main_l13\nerr\nmain_l13:\nbyte "nft_status"\napp_global_get\nbyte "on_sell"\n!=\nassert\nitxn_begin\nint axfer\nitxn_field TypeEnum\nbyte "nft_id"\napp_global_get\nitxn_field XferAsset\nglobal CurrentApplicationAddress\nitxn_field AssetReceiver\nitxn_submit\nbyte "nft_status"\nbyte "on_sell"\napp_global_put\nint 1\nreturn\nmain_l14:\nbyte "seller"\ntxna ApplicationArgs 0\napp_global_put\nbyte "nft_id"\ntxna ApplicationArgs 1\nbtoi\napp_global_put\nbyte "nft_price"\ntxna ApplicationArgs 2\nbtoi\napp_global_put\nbyte "nft_quantity"\ntxna ApplicationArgs 3\nbtoi\napp_global_put\nbyte "nft_status"\nbyte "on_create"\napp_global_put\nint 1\nreturn\n\n// closeNFTTo\ncloseNFTTo_0:\nstore 2\nglobal CurrentApplicationAddress\nload 2\nasset_holding_get AssetBalance\nstore 4\nstore 3\nload 4\nbz closeNFTTo_0_l2\nitxn_begin\nint axfer\nitxn_field TypeEnum\nload 2\nitxn_field XferAsset\ntxn Sender\nitxn_field AssetCloseTo\nitxn_submit\ncloseNFTTo_0_l2:\nretsub\n\n// closeAccountTo\ncloseAccountTo_1:\nstore 5\nglobal CurrentApplicationAddress\nbalance\nint 0\n!=\nbz closeAccountTo_1_l2\nitxn_begin\nint pay\nitxn_field TypeEnum\nload 5\nitxn_field CloseRemainderTo\nitxn_submit\ncloseAccountTo_1_l2:\nretsub';
+  const approvalProgram = '#pragma version 5\ntxn ApplicationID\nint 0\n==\nbnz main_l14\ntxn OnCompletion\nint NoOp\n==\nbnz main_l11\ntxn OnCompletion\nint DeleteApplication\n==\nbnz main_l6\ntxn OnCompletion\nint OptIn\n==\ntxn OnCompletion\nint CloseOut\n==\n||\ntxn OnCompletion\nint UpdateApplication\n==\n||\nbnz main_l5\nerr\nmain_l5:\nint 0\nreturn\nmain_l6:\ntxna ApplicationArgs 0\nbyte "buy"\n==\nbnz main_l10\ntxna ApplicationArgs 0\nbyte "cancel"\n==\nbnz main_l9\nerr\nmain_l9:\ntxn Sender\nbyte "seller"\napp_global_get\n==\ntxn Sender\nglobal CreatorAddress\n==\n||\nassert\nbyte "nft_id"\napp_global_get\ncallsub closeNFTTo_0\nbyte "seller"\napp_global_get\ncallsub closeAccountTo_1\nbyte "on_cancel"\nlog\nint 1\nreturn\nmain_l10:\nglobal CurrentApplicationAddress\nbyte "nft_id"\napp_global_get\nasset_holding_get AssetBalance\nstore 1\nstore 0\nload 1\nload 0\nint 0\n>\n&&\nload 0\nbyte "nft_quantity"\napp_global_get\n==\n&&\ntxn GroupIndex\nint 1\n-\ngtxns TypeEnum\nint pay\n==\n&&\ntxn GroupIndex\nint 1\n-\ngtxns Sender\ntxn Sender\n==\n&&\ntxn GroupIndex\nint 1\n-\ngtxns Receiver\nglobal CurrentApplicationAddress\n==\n&&\ntxn GroupIndex\nint 1\n-\ngtxns Amount\nbyte "nft_price"\napp_global_get\n>=\n&&\nassert\nbyte "nft_id"\napp_global_get\ncallsub closeNFTTo_0\nbyte "seller"\napp_global_get\ncallsub closeAccountTo_1\nbyte "on_buy"\nlog\nint 1\nreturn\nmain_l11:\ntxna ApplicationArgs 0\nbyte "sell"\n==\nbnz main_l13\nerr\nmain_l13:\nbyte "nft_status"\napp_global_get\nbyte "on_sell"\n!=\nassert\nitxn_begin\nint axfer\nitxn_field TypeEnum\nbyte "nft_id"\napp_global_get\nitxn_field XferAsset\nglobal CurrentApplicationAddress\nitxn_field AssetReceiver\nitxn_submit\nbyte "nft_status"\nbyte "on_sell"\napp_global_put\nint 1\nreturn\nmain_l14:\nbyte "seller"\ntxna ApplicationArgs 0\napp_global_put\nbyte "nft_id"\ntxna ApplicationArgs 1\nbtoi\napp_global_put\nbyte "nft_price"\ntxna ApplicationArgs 2\nbtoi\napp_global_put\nbyte "nft_quantity"\ntxna ApplicationArgs 3\nbtoi\napp_global_put\nbyte "nft_status"\nbyte "on_create"\napp_global_put\nint 1\nreturn\n\n// closeNFTTo\ncloseNFTTo_0:\nstore 2\nglobal CurrentApplicationAddress\nload 2\nasset_holding_get AssetBalance\nstore 4\nstore 3\nload 4\nbz closeNFTTo_0_l2\nitxn_begin\nint axfer\nitxn_field TypeEnum\nload 2\nitxn_field XferAsset\ntxn Sender\nitxn_field AssetCloseTo\nitxn_submit\ncloseNFTTo_0_l2:\nretsub\n\n// closeAccountTo\ncloseAccountTo_1:\nstore 5\nglobal CurrentApplicationAddress\nbalance\nint 0\n!=\nbz closeAccountTo_1_l2\nitxn_begin\nint pay\nitxn_field TypeEnum\nload 5\nitxn_field CloseRemainderTo\nitxn_submit\ncloseAccountTo_1_l2:\nretsub'
   const clearStateProgram = '#pragma version 5\nint 1\nreturn';
 
   const approvalCompile = await compileProgram(client, approvalProgram);
@@ -1301,11 +1374,4 @@ const importBuyerAccount = () => {
   );
   return account
 }
-const importClient = (): algosdk.Algodv2 => {
-  const algodToken = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-  const algodServer = 'http://localhost';
-  const algodPort = 4001;
-  const algodClient = new algosdk.Algodv2(algodToken, algodServer, algodPort);
 
-  return algodClient;
-};

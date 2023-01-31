@@ -8,9 +8,9 @@ const walletProviders = initializeProviders(
   [PROVIDER_ID.ALGOSIGNER, PROVIDER_ID.PERA, PROVIDER_ID.DEFLY, PROVIDER_ID.MYALGO],
   {
     network: 'devmodenet',
-    nodeServer: 'http://localhost',
-    nodeToken: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-    nodePort: '4001',
+    nodeServer: 'https://testnet-algorand.api.purestake.io/ps2',
+    // nodeToken: { 'X-API-KEY': '6EbKQ0TN6n6QyFOKJxWb5aoQGe4J0t5660qg3PSE' },
+    nodePort: '',
   },
 );
 
